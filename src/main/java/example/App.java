@@ -8,6 +8,7 @@ import com.google.gson.reflect.TypeToken;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.*;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.zip.Adler32;
 import java.util.zip.CheckedOutputStream;
@@ -67,34 +68,52 @@ public class App implements HttpRequestHandler {
 
 
     /**
-     * 本地生成zip文件（已成功）
-     *
-     * @param toZipObjList 需要转换的对对象列表
-     * @param tempZipName
+     * 本地生成zip文件（支持空目录）
      */
     private File convertZipToLocal(String bucketName, List<ToZipObj> toZipObjList, String tempZipName) {
         File zipFile = null;
         try {
             System.out.println("开始创建临时文件：" + tempZipName + ".zip");
             zipFile = new File(tempZipName + ".zip");
+
             FileOutputStream f = new FileOutputStream(zipFile);
             CheckedOutputStream csum = new CheckedOutputStream(f, new Adler32());
             ZipOutputStream zos = new ZipOutputStream(csum);
+
+            byte[] buffer = new byte[1024];
+
             for (ToZipObj toZipObj : toZipObjList) {
-                String newOssFile = "/" + bucketName + toZipObj.getRoute();
                 String path = "/" + bucketName + toZipObj.getFilePath();
-                System.out.println("读取本地文件：" + path);
-                FileInputStream inputStream = new FileInputStream(new File(path));
-                System.out.println("压缩包内文件名：" + newOssFile);
-                zos.putNextEntry(new ZipEntry(newOssFile));
-                int bytesRead = 0;
-                while ((bytesRead = inputStream.read()) != -1) {
-                    zos.write(bytesRead);
+                File file = new File(path);
+                String zipEntryName = toZipObj.getRoute();
+                boolean isDirectory = zipEntryName.endsWith("/");
+
+                if (isDirectory) {
+                    // ✅ 关键：处理空目录
+                    if (!zipEntryName.endsWith("/")) {
+                        zipEntryName += "/";
+                    }
+                    System.out.println("压缩空目录：" + zipEntryName);
+                    zos.putNextEntry(new ZipEntry(zipEntryName));
+                    zos.closeEntry();
+                } else {
+                    System.out.println("读取文件：" + path);
+                    FileInputStream inputStream = new FileInputStream(file);
+                    System.out.println("压缩文件：" + zipEntryName);
+                    zos.putNextEntry(new ZipEntry(zipEntryName));
+
+                    int len;
+                    while ((len = inputStream.read(buffer)) != -1) {
+                        zos.write(buffer, 0, len);
+                    }
+
+                    inputStream.close();
+                    zos.closeEntry();
                 }
-                inputStream.close();
-                zos.closeEntry();
             }
+
             zos.close();
+
         } catch (Exception e) {
             System.out.println("异常：" + e.getMessage());
             if (zipFile != null) {
@@ -116,5 +135,32 @@ public class App implements HttpRequestHandler {
         }
         System.out.println("解析body：" + body);
         return body.toString();
+    }
+
+
+    public static void main(String[] args) {
+        App app = new App();
+
+        // 模拟 bucket（其实就是本地目录）
+        String bucketName = "/Users/zhangjie/Downloads/测试打包";
+        // 构造测试数据
+        List<ToZipObj> list = new ArrayList<>();
+        // 普通文件
+        ToZipObj file1 = new ToZipObj();
+        file1.setFilePath("/Illustrate.docx");
+        file1.setRoute("/文件夹/Illustrate.docx");
+        list.add(file1);
+
+        // 空目录（关键测试点）
+        ToZipObj emptyDir = new ToZipObj();
+        emptyDir.setFilePath("/emptyDir/");
+        emptyDir.setRoute("/emptyDir/");
+        list.add(emptyDir);
+
+        // 输出zip路径（你可以改成你本地路径）
+        String tempZipName = "/Users/zhangjie/output/test_zip";
+
+        File zipFile = app.convertZipToLocal(bucketName, list, tempZipName);
+        System.out.println("生成完成：" + zipFile.getAbsolutePath());
     }
 }
