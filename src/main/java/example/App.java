@@ -2,18 +2,21 @@ package example;
 
 import com.aliyun.fc.runtime.Context;
 import com.aliyun.fc.runtime.HttpRequestHandler;
+import com.google.common.base.Stopwatch;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.google.gson.Gson;
-import com.google.gson.reflect.TypeToken;
+import org.apache.commons.compress.archivers.zip.ParallelScatterZipCreator;
+import org.apache.commons.compress.archivers.zip.UnixStat;
+import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
+import org.apache.commons.compress.archivers.zip.ZipArchiveOutputStream;
+import org.apache.commons.compress.parallel.InputStreamSupplier;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.*;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.zip.Adler32;
-import java.util.zip.CheckedOutputStream;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipOutputStream;
+import java.util.concurrent.*;
 
 public class App implements HttpRequestHandler {
 
@@ -23,109 +26,110 @@ public class App implements HttpRequestHandler {
         ToZipReq toZipReq = analysisBody(body);
         List<ToZipObj> toZipFileList = toZipReq.getToZipFileList();
         String bucketName = toZipReq.getBucketName();
-        //下载并生成压缩包
+
         String url = handle(toZipFileList, bucketName);
+
         response.setStatus(200);
         OutputStream out = response.getOutputStream();
         out.write((url).getBytes());
     }
 
-
-    /**
-     * 处理
-     *
-     * @param toZipObjList
-     */
-    private String handle(List<ToZipObj> toZipObjList, String bucketName) {
+    private static String handle(List<ToZipObj> toZipObjList, String bucketName) {
         String zipName = "out_put/" + System.currentTimeMillis();
         System.out.println("用于输出的文件名（不带后缀）:" + zipName);
+
         String tempZipName = "/" + bucketName + "/" + zipName;
         System.out.println("临时文件路径:" + tempZipName);
-        convertZipToLocal(bucketName, toZipObjList, tempZipName);
+
+        try {
+            compressFileList(bucketName, toZipObjList, tempZipName);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+
         String objectName = zipName + ".zip";
         System.out.println("文件名:" + objectName);
         return objectName;
     }
 
-    /**
-     * 解析请求体
-     *
-     * @param reqStr
-     * @return
-     */
-    private List<ToZipObj> analysisZipObjList(String reqStr) {
-        List<ToZipObj> toZipObjList = new Gson().fromJson(reqStr, new TypeToken<List<ToZipObj>>() {
-        }.getType());
-        return toZipObjList;
-    }
-
-    /**
-     * 解析请求体
-     */
-    private ToZipReq analysisBody(String body) {
+    private static ToZipReq analysisBody(String body) {
         return new Gson().fromJson(body, ToZipReq.class);
     }
 
-
     /**
-     * 本地生成zip文件（支持空目录）
+     * ✅ 核心方法（支持空目录）
      */
-    private File convertZipToLocal(String bucketName, List<ToZipObj> toZipObjList, String tempZipName) {
-        File zipFile = null;
-        try {
-            System.out.println("开始创建临时文件：" + tempZipName + ".zip");
-            zipFile = new File(tempZipName + ".zip");
+    private static void compressFileList(String bucketName, List<ToZipObj> toZipObjList, String tempZipName)
+            throws IOException, ExecutionException, InterruptedException {
 
-            FileOutputStream f = new FileOutputStream(zipFile);
-            CheckedOutputStream csum = new CheckedOutputStream(f, new Adler32());
-            ZipOutputStream zos = new ZipOutputStream(csum);
+        ThreadFactory factory = new ThreadFactoryBuilder().setNameFormat("compressFileList-pool-").build();
+        ExecutorService executor = new ThreadPoolExecutor(
+                5, 10, 60, TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(20), factory
+        );
 
-            byte[] buffer = new byte[1024];
+        ParallelScatterZipCreator parallelScatterZipCreator = new ParallelScatterZipCreator(executor);
 
-            for (ToZipObj toZipObj : toZipObjList) {
-                String path = "/" + bucketName + toZipObj.getFilePath();
-                File file = new File(path);
-                String zipEntryName = toZipObj.getRoute();
-                boolean isDirectory = zipEntryName.endsWith("/");
+        OutputStream outputStream = new FileOutputStream(tempZipName + ".zip");
+        ZipArchiveOutputStream zipArchiveOutputStream = new ZipArchiveOutputStream(outputStream);
+        zipArchiveOutputStream.setEncoding("UTF-8");
 
-                if (isDirectory) {
-                    // ✅ 关键：处理空目录
-                    if (!zipEntryName.endsWith("/")) {
-                        zipEntryName += "/";
-                    }
-                    System.out.println("压缩空目录：" + zipEntryName);
-                    zos.putNextEntry(new ZipEntry(zipEntryName));
-                    zos.closeEntry();
-                } else {
-                    System.out.println("读取文件：" + path);
-                    FileInputStream inputStream = new FileInputStream(file);
-                    System.out.println("压缩文件：" + zipEntryName);
-                    zos.putNextEntry(new ZipEntry(zipEntryName));
+        for (ToZipObj toZipObj : toZipObjList) {
 
-                    int len;
-                    while ((len = inputStream.read(buffer)) != -1) {
-                        zos.write(buffer, 0, len);
-                    }
+            String realFilePath = "/" + bucketName + toZipObj.getFilePath();
+            String packagePath = "/" + toZipObj.getRoute();
 
-                    inputStream.close();
-                    zos.closeEntry();
+            // ⭐ 核心：用 route 判断目录
+            boolean isDirectory = packagePath.endsWith("/");
+
+            if (isDirectory) {
+                // ✅ 空目录（即使本地不存在也能打包）
+                ZipArchiveEntry dirEntry = new ZipArchiveEntry(packagePath);
+                dirEntry.setMethod(ZipArchiveEntry.STORED);
+                dirEntry.setSize(0);
+                dirEntry.setUnixMode(UnixStat.DIR_FLAG | 0755);
+
+                parallelScatterZipCreator.addArchiveEntry(
+                        dirEntry,
+                        () -> new ByteArrayInputStream(new byte[0])
+                );
+
+                System.out.println("添加空目录：" + packagePath);
+                continue;
+            }
+
+            File inFile = new File(realFilePath);
+
+            if (!inFile.exists()) {
+                System.out.println("文件不存在，跳过：" + realFilePath);
+                continue;
+            }
+
+            final InputStreamSupplier inputStreamSupplier = () -> {
+                try {
+                    return new FileInputStream(inFile);
+                } catch (FileNotFoundException e) {
+                    throw new RuntimeException(e);
                 }
-            }
+            };
 
-            zos.close();
+            ZipArchiveEntry zipArchiveEntry = new ZipArchiveEntry(packagePath);
+            zipArchiveEntry.setMethod(ZipArchiveEntry.DEFLATED);
+            zipArchiveEntry.setSize(inFile.length());
+            zipArchiveEntry.setUnixMode(UnixStat.FILE_FLAG | 0644);
 
-        } catch (Exception e) {
-            System.out.println("异常：" + e.getMessage());
-            if (zipFile != null) {
-                zipFile.delete();
-            }
+            parallelScatterZipCreator.addArchiveEntry(zipArchiveEntry, inputStreamSupplier);
+
+            System.out.println("添加文件：" + packagePath);
         }
-        return zipFile;
+
+        parallelScatterZipCreator.writeTo(zipArchiveOutputStream);
+
+        zipArchiveOutputStream.close();
+        outputStream.close();
+        executor.shutdown();
     }
 
-    /**
-     * 解析 request body
-     */
     private String analysisBody(HttpServletRequest request) throws IOException {
         BufferedReader br = request.getReader();
         StringBuilder body = new StringBuilder();
@@ -137,30 +141,31 @@ public class App implements HttpRequestHandler {
         return body.toString();
     }
 
-
+    /**
+     * ✅ 本地测试入口
+     */
     public static void main(String[] args) {
-        App app = new App();
+        Stopwatch watch = Stopwatch.createStarted();
 
-        // 模拟 bucket（其实就是本地目录）
-        String bucketName = "/Users/zhangjie/Downloads/测试打包";
-        // 构造测试数据
-        List<ToZipObj> list = new ArrayList<>();
-        // 普通文件
-        ToZipObj file1 = new ToZipObj();
-        file1.setFilePath("/Illustrate.docx");
-        file1.setRoute("/文件夹/Illustrate.docx");
-        list.add(file1);
+        List<ToZipObj> toZipFileList = new ArrayList<ToZipObj>() {{
+            // 文件
+            add(new ToZipObj() {{
+                setFilePath("/Downloads/test/a.txt");
+                setRoute("a.txt");
+            }});
 
-        // 空目录（关键测试点）
-        ToZipObj emptyDir = new ToZipObj();
-        emptyDir.setFilePath("/emptyDir/");
-        emptyDir.setRoute("/emptyDir/");
-        list.add(emptyDir);
+            // 空目录（不存在也可以）
+            add(new ToZipObj() {{
+                setFilePath("/Downloads/test/emptyDir");
+                setRoute("emptyDir/"); // ⚠️ 必须 /
+            }});
+        }};
 
-        // 输出zip路径（你可以改成你本地路径）
-        String tempZipName = "/Users/zhangjie/output/test_zip";
+        String bucketName = "Users/zhangjie";
 
-        File zipFile = app.convertZipToLocal(bucketName, list, tempZipName);
-        System.out.println("生成完成：" + zipFile.getAbsolutePath());
+        String url = handle(toZipFileList, bucketName);
+
+        System.out.println("输出文件：" + url);
+        System.out.println("完成,花费：" + watch.elapsed(TimeUnit.MILLISECONDS) + "毫秒");
     }
 }
