@@ -58,10 +58,13 @@ public class App implements HttpRequestHandler {
         return toZipObjList;
     }
 
+    /**
+     * 解析请求体
+     */
     private ToZipReq analysisBody(String body) {
-        ToZipReq toZipReq = new Gson().fromJson(body, ToZipReq.class);
-        return toZipReq;
+        return new Gson().fromJson(body, ToZipReq.class);
     }
+
 
 
     /**
