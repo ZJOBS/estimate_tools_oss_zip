@@ -66,7 +66,6 @@ public class App implements HttpRequestHandler {
     }
 
 
-
     /**
      * 本地生成zip文件（已成功）
      *
@@ -105,13 +104,17 @@ public class App implements HttpRequestHandler {
         return zipFile;
     }
 
+    /**
+     * 解析 request body
+     */
     private String analysisBody(HttpServletRequest request) throws IOException {
         BufferedReader br = request.getReader();
-        String str, body = "";
+        StringBuilder body = new StringBuilder();
+        String str;
         while ((str = br.readLine()) != null) {
-            body += str;
+            body.append(str);
         }
         System.out.println("解析body：" + body);
-        return body;
+        return body.toString();
     }
 }
