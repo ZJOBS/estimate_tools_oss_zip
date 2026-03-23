@@ -3,7 +3,7 @@ package example;
 public class ToZipObj {
     /**
      * 文件路径 例如：http://shenyuanhtfiles.oss-cn-shanghai.aliyuncs.com/多文件夹/11111/测试专用word文件1_20231117174310.doc
-     * 应该输入多文件夹/11111/测试专用word文件1_20231117174310.doc
+     * 应该输入 多文件夹/11111/测试专用word文件1_20231117174310.doc
      */
     private String filePath;
     /**
