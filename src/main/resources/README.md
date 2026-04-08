@@ -1,6 +1,7 @@
 ```json
 {
   "bucketName": "bucketName",
+  "compressedFileName": "文件名称",
   "toZipFileList": [
     {
       "filePath": "/测试专用pdf文件_20231114104559.pdf",

@@ -6,6 +6,8 @@ public class ToZipReq {
 
     private String bucketName;
 
+    private String compressedFileName;
+
     private List<ToZipObj> toZipFileList;
 
     public String getBucketName() {
@@ -22,5 +24,13 @@ public class ToZipReq {
 
     public void setToZipFileList(List<ToZipObj> toZipFileList) {
         this.toZipFileList = toZipFileList;
+    }
+
+    public String getCompressedFileName() {
+        return compressedFileName;
+    }
+
+    public void setCompressedFileName(String compressedFileName) {
+        this.compressedFileName = compressedFileName;
     }
 }

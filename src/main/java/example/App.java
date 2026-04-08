@@ -27,15 +27,20 @@ public class App implements HttpRequestHandler {
         List<ToZipObj> toZipFileList = toZipReq.getToZipFileList();
         String bucketName = toZipReq.getBucketName();
 
-        String url = handle(toZipFileList, bucketName);
+        String url = handle(toZipFileList, bucketName, toZipReq.getCompressedFileName());
 
         response.setStatus(200);
         OutputStream out = response.getOutputStream();
         out.write((url).getBytes());
     }
 
-    private static String handle(List<ToZipObj> toZipObjList, String bucketName) {
-        String zipName = "out_put/" + System.currentTimeMillis();
+    private static String handle(List<ToZipObj> toZipObjList, String bucketName, String compressedFileName) {
+        String zipName;
+        if (compressedFileName == null) {
+            zipName = "out_put/" + System.currentTimeMillis();
+        } else {
+            zipName = "out_put/" + compressedFileName;
+        }
         System.out.println("用于输出的文件名（不带后缀）:" + zipName);
 
         String tempZipName = "/" + bucketName + "/" + zipName;
@@ -160,11 +165,8 @@ public class App implements HttpRequestHandler {
                 setRoute("emptyDir/"); // ⚠️ 必须 /
             }});
         }};
-
         String bucketName = "Users/zhangjie";
-
-        String url = handle(toZipFileList, bucketName);
-
+        String url = handle(toZipFileList, bucketName, "测试文件夹");
         System.out.println("输出文件：" + url);
         System.out.println("完成,花费：" + watch.elapsed(TimeUnit.MILLISECONDS) + "毫秒");
     }
