@@ -66,11 +66,14 @@ public class App implements HttpRequestHandler {
      */
     private static void compressFileList(String bucketName, List<ToZipObj> toZipObjList, String tempZipName)
             throws IOException, ExecutionException, InterruptedException {
-
+        int cpuCores = Runtime.getRuntime().availableProcessors();
+        int poolSize = Math.max(5, Math.min(cpuCores * 2, 16));
+        int queueSize = Math.max(50, poolSize * 3);
         ThreadFactory factory = new ThreadFactoryBuilder().setNameFormat("compressFileList-pool-").build();
         ExecutorService executor = new ThreadPoolExecutor(
-                5, 10, 60, TimeUnit.SECONDS,
-                new LinkedBlockingQueue<>(20), factory
+                cpuCores, poolSize,
+                60L, TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(queueSize), factory
         );
 
         ParallelScatterZipCreator parallelScatterZipCreator = new ParallelScatterZipCreator(executor);
