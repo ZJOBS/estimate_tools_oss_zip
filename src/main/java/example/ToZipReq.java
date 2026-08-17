@@ -8,6 +8,10 @@ public class ToZipReq {
 
     private String compressedFileName;
 
+    private Long key;
+
+    private String environment;
+
     private List<ToZipObj> toZipFileList;
 
     public String getBucketName() {
@@ -32,5 +36,22 @@ public class ToZipReq {
 
     public void setCompressedFileName(String compressedFileName) {
         this.compressedFileName = compressedFileName;
+    }
+
+
+    public Long getKey() {
+        return key;
+    }
+
+    public void setKey(Long key) {
+        this.key = key;
+    }
+
+    public String getEnvironment() {
+        return environment;
+    }
+
+    public void setEnvironment(String environment) {
+        this.environment = environment;
     }
 }

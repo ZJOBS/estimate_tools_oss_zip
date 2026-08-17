@@ -25,13 +25,19 @@ public class App implements HttpRequestHandler {
         String body = analysisBody(request);
         ToZipReq toZipReq = analysisBody(body);
         List<ToZipObj> toZipFileList = toZipReq.getToZipFileList();
-        String bucketName = toZipReq.getBucketName();
-
-        String url = handle(toZipFileList, bucketName, toZipReq.getCompressedFileName());
-
-        response.setStatus(200);
-        OutputStream out = response.getOutputStream();
-        out.write((url).getBytes());
+        Boolean success = null;
+        String objectName = null;
+        try {
+            objectName = handle(toZipFileList, toZipReq.getBucketName(), toZipReq.getCompressedFileName());
+            response.setStatus(200);
+            OutputStream out = response.getOutputStream();
+            out.write((objectName).getBytes());
+            success = true;
+        } catch (Exception e) {
+            success = false;
+        } finally {
+            RedisUtil.send(toZipReq.getKey(), objectName, success, toZipReq.getEnvironment());
+        }
     }
 
     private static String handle(List<ToZipObj> toZipObjList, String bucketName, String compressedFileName) {
@@ -62,7 +68,7 @@ public class App implements HttpRequestHandler {
     }
 
     /**
-     * ✅ 核心方法（支持空目录）
+     * 核心方法（支持空目录）
      */
     private static void compressFileList(String bucketName, List<ToZipObj> toZipObjList, String tempZipName)
             throws IOException, ExecutionException, InterruptedException {
@@ -73,7 +79,7 @@ public class App implements HttpRequestHandler {
         ExecutorService executor = new ThreadPoolExecutor(
                 cpuCores, poolSize,
                 60L, TimeUnit.SECONDS,
-                new LinkedBlockingQueue<>(queueSize), factory
+                new LinkedBlockingQueue<>(), factory
         );
 
         ParallelScatterZipCreator parallelScatterZipCreator = new ParallelScatterZipCreator(executor);
@@ -82,60 +88,61 @@ public class App implements HttpRequestHandler {
         ZipArchiveOutputStream zipArchiveOutputStream = new ZipArchiveOutputStream(outputStream);
         zipArchiveOutputStream.setEncoding("UTF-8");
 
-        for (ToZipObj toZipObj : toZipObjList) {
 
-            String realFilePath = "/" + bucketName + toZipObj.getFilePath();
-            String packagePath = "/" + toZipObj.getRoute();
+        try {
+            for (ToZipObj toZipObj : toZipObjList) {
+                String realFilePath = "/" + bucketName + toZipObj.getFilePath();
+                String packagePath = "/" + toZipObj.getRoute();
 
-            // ⭐ 核心：用 route 判断目录
-            boolean isDirectory = packagePath.endsWith("/");
+                // ⭐ 核心：用 route 判断目录
+                boolean isDirectory = packagePath.endsWith("/");
 
-            if (isDirectory) {
-                // ✅ 空目录（即使本地不存在也能打包）
-                ZipArchiveEntry dirEntry = new ZipArchiveEntry(packagePath);
-                dirEntry.setMethod(ZipArchiveEntry.STORED);
-                dirEntry.setSize(0);
-                dirEntry.setUnixMode(UnixStat.DIR_FLAG | 0755);
+                if (isDirectory) {
+                    // ✅ 空目录（即使本地不存在也能打包）
+                    ZipArchiveEntry dirEntry = new ZipArchiveEntry(packagePath);
+                    dirEntry.setMethod(ZipArchiveEntry.STORED);
+                    dirEntry.setSize(0);
+                    dirEntry.setUnixMode(UnixStat.DIR_FLAG | 0755);
 
-                parallelScatterZipCreator.addArchiveEntry(
-                        dirEntry,
-                        () -> new ByteArrayInputStream(new byte[0])
-                );
+                    parallelScatterZipCreator.addArchiveEntry(
+                            dirEntry,
+                            () -> new ByteArrayInputStream(new byte[0])
+                    );
 
-                System.out.println("添加空目录：" + packagePath);
-                continue;
-            }
-
-            File inFile = new File(realFilePath);
-
-            if (!inFile.exists()) {
-                System.out.println("文件不存在，跳过：" + realFilePath);
-                continue;
-            }
-
-            final InputStreamSupplier inputStreamSupplier = () -> {
-                try {
-                    return new FileInputStream(inFile);
-                } catch (FileNotFoundException e) {
-                    throw new RuntimeException(e);
+                    System.out.println("添加空目录：" + packagePath);
+                    continue;
                 }
-            };
 
-            ZipArchiveEntry zipArchiveEntry = new ZipArchiveEntry(packagePath);
-            zipArchiveEntry.setMethod(ZipArchiveEntry.DEFLATED);
-            zipArchiveEntry.setSize(inFile.length());
-            zipArchiveEntry.setUnixMode(UnixStat.FILE_FLAG | 0644);
+                File inFile = new File(realFilePath);
 
-            parallelScatterZipCreator.addArchiveEntry(zipArchiveEntry, inputStreamSupplier);
+                if (!inFile.exists()) {
+                    System.out.println("文件不存在，跳过：" + realFilePath);
+                    continue;
+                }
 
-            System.out.println("添加文件：" + packagePath);
+                final InputStreamSupplier inputStreamSupplier = () -> {
+                    try {
+                        return new FileInputStream(inFile);
+                    } catch (FileNotFoundException e) {
+                        throw new RuntimeException(e);
+                    }
+                };
+
+                ZipArchiveEntry zipArchiveEntry = new ZipArchiveEntry(packagePath);
+                zipArchiveEntry.setMethod(ZipArchiveEntry.DEFLATED);
+                zipArchiveEntry.setSize(inFile.length());
+                zipArchiveEntry.setUnixMode(UnixStat.FILE_FLAG | 0644);
+
+                parallelScatterZipCreator.addArchiveEntry(zipArchiveEntry, inputStreamSupplier);
+
+                System.out.println("添加文件：" + packagePath);
+            }
+            parallelScatterZipCreator.writeTo(zipArchiveOutputStream);
+        } finally {
+            zipArchiveOutputStream.close();
+            outputStream.close();
+            executor.shutdown();
         }
-
-        parallelScatterZipCreator.writeTo(zipArchiveOutputStream);
-
-        zipArchiveOutputStream.close();
-        outputStream.close();
-        executor.shutdown();
     }
 
     private String analysisBody(HttpServletRequest request) throws IOException {
@@ -150,7 +157,7 @@ public class App implements HttpRequestHandler {
     }
 
     /**
-     * ✅ 本地测试入口
+     * 本地测试入口
      */
     public static void main(String[] args) {
         Stopwatch watch = Stopwatch.createStarted();
