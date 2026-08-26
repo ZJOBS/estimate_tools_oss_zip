@@ -5,6 +5,7 @@ public class MessageDto {
     private Boolean success;
     private String objectName;
     private String environment;
+    private String errorMessage;
 
     public Long getKey() {
         return key;
@@ -36,5 +37,13 @@ public class MessageDto {
 
     public void setEnvironment(String environment) {
         this.environment = environment;
+    }
+
+    public String getErrorMessage() {
+        return errorMessage;
+    }
+
+    public void setErrorMessage(String errorMessage) {
+        this.errorMessage = errorMessage;
     }
 }

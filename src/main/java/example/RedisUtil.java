@@ -9,6 +9,8 @@ import org.redisson.config.Config;
 public class RedisUtil {
     private static final String topic_name = "message:pack_status";
 
+    private static final RedissonClient redisson = createRedisClient();
+
     private static RedissonClient createRedisClient() {
         Config config = new Config();
         config.useSingleServer()
@@ -18,18 +20,22 @@ public class RedisUtil {
         return Redisson.create(config);
     }
 
-    public static void send(Long id, String objectName, Boolean success, String environment) {
-        RedissonClient redisson = createRedisClient();
-        RTopic topic = redisson.getTopic(topic_name);
-        MessageDto dto = new MessageDto();
-        dto.setKey(id);
-        dto.setSuccess(success);
-        dto.setObjectName(objectName);
-        dto.setEnvironment(environment);
-        topic.publish(new Gson().toJson(dto, MessageDto.class));
+    public static void send(Long id, String objectName, Boolean success, String environment, String errorMessage) {
+        try {
+            RTopic topic = redisson.getTopic(topic_name);
+            MessageDto dto = new MessageDto();
+            dto.setKey(id);
+            dto.setSuccess(success);
+            dto.setObjectName(objectName);
+            dto.setEnvironment(environment);
+            dto.setErrorMessage(errorMessage);
+            topic.publish(new Gson().toJson(dto, MessageDto.class));
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     public static void main(String[] args) {
-        send(1L, "1212", Boolean.TRUE, "qa");
+        send(1L, "1212", Boolean.TRUE, "qa", null);
     }
 }

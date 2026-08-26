@@ -27,6 +27,7 @@ public class App implements HttpRequestHandler {
         List<ToZipObj> toZipFileList = toZipReq.getToZipFileList();
         Boolean success = null;
         String objectName = null;
+        String errorMessage = null;
         try {
             objectName = handle(toZipFileList, toZipReq.getBucketName(), toZipReq.getCompressedFileName());
             response.setStatus(200);
@@ -34,9 +35,11 @@ public class App implements HttpRequestHandler {
             out.write((objectName).getBytes());
             success = true;
         } catch (Exception e) {
+            errorMessage = e.getMessage();
+            e.printStackTrace();
             success = false;
         } finally {
-            RedisUtil.send(toZipReq.getKey(), objectName, success, toZipReq.getEnvironment());
+            RedisUtil.send(toZipReq.getKey(), objectName, success, toZipReq.getEnvironment(), errorMessage);
         }
     }
 
@@ -88,17 +91,15 @@ public class App implements HttpRequestHandler {
         ZipArchiveOutputStream zipArchiveOutputStream = new ZipArchiveOutputStream(outputStream);
         zipArchiveOutputStream.setEncoding("UTF-8");
 
-
         try {
             for (ToZipObj toZipObj : toZipObjList) {
                 String realFilePath = "/" + bucketName + toZipObj.getFilePath();
                 String packagePath = "/" + toZipObj.getRoute();
 
-                // ⭐ 核心：用 route 判断目录
                 boolean isDirectory = packagePath.endsWith("/");
 
                 if (isDirectory) {
-                    // ✅ 空目录（即使本地不存在也能打包）
+                    //  空目录（即使本地不存在也能打包）
                     ZipArchiveEntry dirEntry = new ZipArchiveEntry(packagePath);
                     dirEntry.setMethod(ZipArchiveEntry.STORED);
                     dirEntry.setSize(0);
@@ -108,7 +109,6 @@ public class App implements HttpRequestHandler {
                             dirEntry,
                             () -> new ByteArrayInputStream(new byte[0])
                     );
-
                     System.out.println("添加空目录：" + packagePath);
                     continue;
                 }
@@ -152,7 +152,7 @@ public class App implements HttpRequestHandler {
         while ((str = br.readLine()) != null) {
             body.append(str);
         }
-        System.out.println("解析body：" + body);
+        System.out.println("解析body长度：" + body.length());
         return body.toString();
     }
 
