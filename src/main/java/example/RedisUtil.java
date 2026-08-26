@@ -8,8 +8,19 @@ import org.redisson.config.Config;
 
 public class RedisUtil {
     private static final String topic_name = "message:pack_status";
+    
+    private static volatile RedissonClient redisson;
 
-    private static final RedissonClient redisson = createRedisClient();
+    private static RedissonClient getClient() {
+        if (redisson == null) {
+            synchronized (RedisUtil.class) {
+                if (redisson == null) {
+                    redisson = createRedisClient();
+                }
+            }
+        }
+        return redisson;
+    }
 
     private static RedissonClient createRedisClient() {
         Config config = new Config();
@@ -22,7 +33,7 @@ public class RedisUtil {
 
     public static void send(Long id, String objectName, Boolean success, String environment, String errorMessage) {
         try {
-            RTopic topic = redisson.getTopic(topic_name);
+            RTopic topic = getClient().getTopic(topic_name);
             MessageDto dto = new MessageDto();
             dto.setKey(id);
             dto.setSuccess(success);
