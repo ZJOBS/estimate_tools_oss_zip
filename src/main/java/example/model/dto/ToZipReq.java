@@ -1,4 +1,4 @@
-package example;
+package example.model.dto;
 
 import java.util.List;
 

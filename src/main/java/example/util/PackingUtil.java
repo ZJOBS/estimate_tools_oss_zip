@@ -1,7 +1,7 @@
 package example.util;
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
-import example.ToZipObj;
+import example.model.dto.ToZipObj;
 import org.apache.commons.compress.archivers.zip.ParallelScatterZipCreator;
 import org.apache.commons.compress.archivers.zip.UnixStat;
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
@@ -92,7 +92,7 @@ public class PackingUtil {
     /**
      * 本地生成zip文件（支持空目录）
      */
-    public File compressFileList(String bucketName, List<ToZipObj> toZipObjList, String tempZipName) {
+    public static File compressFileList(String bucketName, List<ToZipObj> toZipObjList, String tempZipName) {
         File zipFile = null;
         try {
             System.out.println("开始创建临时文件：" + tempZipName + ".zip");

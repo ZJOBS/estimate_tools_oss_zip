@@ -1,11 +1,7 @@
 package example;
 
 import com.aliyun.oss.OSS;
-import com.aliyun.oss.model.AbortMultipartUploadRequest;
-import com.aliyun.oss.model.CompleteMultipartUploadRequest;
-import com.aliyun.oss.model.InitiateMultipartUploadRequest;
-import com.aliyun.oss.model.PartETag;
-import com.aliyun.oss.model.UploadPartRequest;
+import com.aliyun.oss.model.*;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;

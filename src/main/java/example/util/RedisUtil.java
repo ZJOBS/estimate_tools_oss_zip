@@ -1,6 +1,7 @@
-package example;
+package example.util;
 
 import com.google.gson.Gson;
+import example.model.dto.MessageDto;
 import org.redisson.Redisson;
 import org.redisson.api.RTopic;
 import org.redisson.api.RedissonClient;
