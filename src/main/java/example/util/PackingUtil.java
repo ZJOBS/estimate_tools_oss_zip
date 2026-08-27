@@ -102,7 +102,7 @@ public class PackingUtil {
             CheckedOutputStream csum = new CheckedOutputStream(f, new Adler32());
             ZipOutputStream zos = new ZipOutputStream(csum);
 
-            byte[] buffer = new byte[1024];
+            byte[] buffer = new byte[1024 * 1024];
 
             for (ToZipObj toZipObj : toZipObjList) {
                 String path = "/" + bucketName + toZipObj.getFilePath();
